@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from pathlib import Path
 
 import h5py
@@ -7,8 +8,12 @@ import lh5
 import pytest
 from lh5.compression import ULEB128ZigZagDiff
 
-from daq2lh5 import build_raw
+from daq2lh5 import build_raw, get_streamer
+from daq2lh5.compass.compass_streamer import CompassStreamer
 from daq2lh5.fc.fc_event_decoder import fc_event_decoded_values
+from daq2lh5.fc.fc_streamer import FCStreamer
+from daq2lh5.llama.llama_streamer import LLAMAStreamer
+from daq2lh5.orca.orca_streamer import OrcaStreamer
 
 config_dir = Path(__file__).parent / "configs"
 
@@ -351,3 +356,59 @@ def test_build_raw_orca_sis3316(lgnd_test_data, tmptestdir):
     )
 
     assert os.path.exists(out_file)
+
+
+@pytest.mark.parametrize(
+    "filename, streamer_class",
+    [
+        ("daq.fcio", FCStreamer),
+        ("daq.orca", OrcaStreamer),
+        ("daq.bin", CompassStreamer),
+        ("daq.BIN", CompassStreamer),
+    ],
+)
+def test_get_streamer_detects_extension(filename, streamer_class):
+    assert isinstance(get_streamer(f"/some/dir/{filename}"), streamer_class)
+
+
+@pytest.mark.parametrize(
+    "in_stream_type, streamer_class",
+    [
+        ("ORCA", OrcaStreamer),
+        ("FlashCam", FCStreamer),
+        ("Compass", CompassStreamer),
+        ("LlamaDaq", LLAMAStreamer),
+    ],
+)
+def test_get_streamer_explicit_type(in_stream_type, streamer_class):
+    assert isinstance(get_streamer("any.name", in_stream_type), streamer_class)
+
+
+def test_get_streamer_compass_config_implies_compass():
+    streamer = get_streamer("extensionless", compass_config_file="cfg.json")
+    assert isinstance(streamer, CompassStreamer)
+
+
+def test_get_streamer_detects_orca_content(lgnd_test_data, tmp_path):
+    orca_file = lgnd_test_data.get_path("orca/fc/L200-comm-20220519-phy-geds.orca")
+    noext = tmp_path / "extensionless_orca"
+    shutil.copyfile(orca_file, noext)
+    assert isinstance(get_streamer(str(noext)), OrcaStreamer)
+
+
+def test_get_streamer_errors(tmp_path):
+    # unknown file extension
+    with pytest.raises(RuntimeError):
+        get_streamer("daq.xyz")
+
+    # no extension and not ORCA content
+    junk = tmp_path / "junkfile"
+    junk.write_bytes(b"\xff" * 64)
+    with pytest.raises(RuntimeError):
+        get_streamer(str(junk))
+
+    # recognized but unimplemented / unknown stream types
+    with pytest.raises(NotImplementedError):
+        get_streamer("daq.fcio", "MGDO")
+    with pytest.raises(NotImplementedError):
+        get_streamer("daq.fcio", "NotADaq")
