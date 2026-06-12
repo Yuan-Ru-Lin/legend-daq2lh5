@@ -4,6 +4,8 @@ import glob
 import logging
 import os
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import lh5
 import numpy as np
@@ -15,7 +17,7 @@ from .data_streamer import DataStreamer
 from .fc.fc_streamer import FCStreamer
 from .llama.llama_streamer import LLAMAStreamer
 from .orca.orca_streamer import OrcaStreamer
-from .raw_buffer import RawBufferLibrary, write_to_lh5_and_clear
+from .raw_buffer import RawBuffer, RawBufferLibrary, write_to_lh5_and_clear
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +93,55 @@ def get_streamer(
         raise NotImplementedError("MGDO streaming not yet implemented")
     else:
         raise NotImplementedError(f"unknown input stream type {in_stream_type}")
+
+
+@contextmanager
+def open_stream(
+    in_stream: str,
+    in_stream_type: str = None,
+    compass_config_file: str = None,
+    **open_kwargs,
+) -> Iterator[tuple[DataStreamer, list[RawBuffer]]]:
+    """Open a DAQ stream of any supported type, guaranteeing closure.
+
+    Composes :func:`.get_streamer` and
+    :meth:`~.data_streamer.DataStreamer.open_stream`: selects the appropriate
+    streamer for `in_stream`, opens it, and yields it together with the
+    header data. The stream is closed on exit from the ``with`` block, also
+    when an exception is raised inside it.
+
+    Examples
+    --------
+    >>> with open_stream("daq.fcio") as (streamer, header_data):
+    ...     for chunk_list in streamer:
+    ...         do_something(chunk_list)
+
+    Parameters
+    ----------
+    in_stream
+        the path to the input stream, see :func:`.get_streamer`.
+    in_stream_type
+        ``'ORCA'``, ``'FlashCam'``, ``'LlamaDaq'``, ``'Compass'``, or ``None``
+        to auto-detect.
+    compass_config_file
+        configuration file for the CoMPASS decoder.
+    open_kwargs
+        keyword arguments forwarded to
+        :meth:`~.data_streamer.DataStreamer.open_stream` (e.g. `rb_lib`,
+        `buffer_size`, `chunk_mode`, `out_stream`).
+
+    Yields
+    ------
+    streamer, header_data
+        the opened :class:`.DataStreamer` and the list of
+        :class:`.RawBuffer`\\ s containing the file header data.
+    """
+    streamer = get_streamer(in_stream, in_stream_type, compass_config_file)
+    header_data = streamer.open_stream(in_stream, **open_kwargs)
+    try:
+        yield streamer, header_data
+    finally:
+        streamer.close_stream()
 
 
 def build_raw(

@@ -8,7 +8,7 @@ import lh5
 import pytest
 from lh5.compression import ULEB128ZigZagDiff
 
-from daq2lh5 import build_raw, get_streamer
+from daq2lh5 import build_raw, get_streamer, open_stream
 from daq2lh5.compass.compass_streamer import CompassStreamer
 from daq2lh5.fc.fc_event_decoder import fc_event_decoded_values
 from daq2lh5.fc.fc_streamer import FCStreamer
@@ -412,3 +412,30 @@ def test_get_streamer_errors(tmp_path):
         get_streamer("daq.fcio", "MGDO")
     with pytest.raises(NotImplementedError):
         get_streamer("daq.fcio", "NotADaq")
+
+
+def test_open_stream(lgnd_test_data):
+    in_file = lgnd_test_data.get_path("fcio/L200-comm-20211130-phy-spms.fcio")
+
+    with open_stream(in_file, buffer_size=1024) as (streamer, header_data):
+        assert isinstance(streamer, FCStreamer)
+        assert len(header_data) > 0
+        n_rows = sum(
+            rb.loc
+            for chunk_list in streamer
+            for rb in chunk_list
+            if rb.out_name == "FCEvent"
+        )
+    assert n_rows == 300  # number of events in the test file
+
+
+def test_open_stream_closes_on_error(lgnd_test_data):
+    in_file = lgnd_test_data.get_path("fcio/L200-comm-20211130-phy-spms.fcio")
+
+    closed = []
+    with pytest.raises(ValueError):
+        with open_stream(in_file) as (streamer, _):
+            orig_close = streamer.close_stream
+            streamer.close_stream = lambda: (closed.append(True), orig_close())
+            raise ValueError("oops")
+    assert closed == [True]
