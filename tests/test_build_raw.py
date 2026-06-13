@@ -439,3 +439,22 @@ def test_open_stream_closes_on_error(lgnd_test_data):
             streamer.close_stream = lambda: (closed.append(True), orig_close())
             raise ValueError("oops")
     assert closed == [True]
+
+
+def test_open_stream_closes_on_open_failure(lgnd_test_data, monkeypatch):
+    in_file = lgnd_test_data.get_path("fcio/L200-comm-20211130-phy-spms.fcio")
+
+    # buffer_size=5 makes open_stream() raise *after* the file is opened, so a
+    # resource is leaked unless the context manager closes it on the way out
+    closed = []
+    orig_close = FCStreamer.close_stream
+    monkeypatch.setattr(
+        FCStreamer,
+        "close_stream",
+        lambda self: (closed.append(True), orig_close(self)),
+    )
+
+    with pytest.raises(ValueError):
+        with open_stream(in_file, buffer_size=5):
+            pass
+    assert closed == [True]  # cleanup attempted despite the failed open

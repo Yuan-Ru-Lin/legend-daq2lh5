@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 
 import lh5
 import numpy as np
@@ -137,7 +137,14 @@ def open_stream(
         :class:`.RawBuffer`\\ s containing the file header data.
     """
     streamer = get_streamer(in_stream, in_stream_type, compass_config_file)
-    header_data = streamer.open_stream(in_stream, **open_kwargs)
+    try:
+        header_data = streamer.open_stream(in_stream, **open_kwargs)
+    except BaseException:
+        # open_stream may have acquired a resource before failing; release it
+        # best-effort, without letting a cleanup error mask the original one
+        with suppress(Exception):
+            streamer.close_stream()
+        raise
     try:
         yield streamer, header_data
     finally:
