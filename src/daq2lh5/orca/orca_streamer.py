@@ -72,6 +72,10 @@ class OrcaStreamer(DataStreamer):
 
         # packet is valid. Can set the packet_id and log its location
         self.packet_id += 1
+        if not self.in_stream.seekable():
+            # a forward-only stream (e.g. a socket) supports neither tell() nor
+            # the random-access that packet_locs enables, so skip the bookkeeping
+            return pkt_hdr
         filepos = self.in_stream.tell() - n_bytes_read
         if self.packet_id < len(self.packet_locs):
             if self.packet_locs[self.packet_id] != filepos:
@@ -195,7 +199,14 @@ class OrcaStreamer(DataStreamer):
             and orca_packet.get_data_id(pkt_hdr, shift=False)
             not in self.decoder_id_dict
         ):
-            self.in_stream.seek((n_words - len(pkt_hdr)) * 4, 1)
+            if self.in_stream.seekable():
+                self.in_stream.seek((n_words - len(pkt_hdr)) * 4, 1)
+            else:
+                # forward-only stream (e.g. socket): can't seek, so read and
+                # discard the rest of the unknown packet
+                if len(self.buffer) < n_words:
+                    self.buffer.resize(n_words, refcheck=False)
+                self.in_stream.readinto(self.buffer[len(pkt_hdr) : n_words])
             return pkt_hdr
 
         # load into buffer, resizing as necessary
