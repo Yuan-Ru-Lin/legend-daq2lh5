@@ -66,12 +66,22 @@ class FCStreamer(DataStreamer):
         buffer_size: int = 8192,
         chunk_mode: str = "any_full",
         out_stream: str = "",
+        timeout: int = 0,
     ) -> list[RawBuffer]:
         """Initialize the FlashCam data stream.
 
         Refer to the documentation for
         :meth:`.data_streamer.DataStreamer.open_stream` for a description
         of the parameters.
+
+        Parameters
+        ----------
+        timeout
+            connection/polling timeout in milliseconds passed to the
+            underlying FCIO stream. ``0`` (the default) returns immediately
+            and is appropriate for files. A TCP stream (``tcp://...`` peer)
+            requires a non-zero value to wait for the connection; use ``-1``
+            to block indefinitely.
 
         Returns
         -------
@@ -80,7 +90,7 @@ class FCStreamer(DataStreamer):
             :class:`~.fc_config_decoder.FCConfig` table and
             optionally the :class:`~.fsp_decoder.FSPConfig` table.
         """
-        self.fcio.open(fcio_peer)  # using defaults
+        self.fcio.open(fcio_peer, timeout=timeout)
         self.n_bytes_read = self.fcio.read_bytes() + self.fcio.skipped_bytes()
 
         # read in file header (config) info, returns an lgdo.Struct

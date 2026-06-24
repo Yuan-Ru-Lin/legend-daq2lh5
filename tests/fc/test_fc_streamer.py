@@ -56,6 +56,20 @@ def test_open_stream(lgnd_test_data):
     assert streamer.event_rbkd is not None  # dict containing event info is initialized
 
 
+def test_open_stream_timeout_kwarg(lgnd_test_data):
+    # the timeout is forwarded to the FCIO stream; the default (0) preserves
+    # the file-reading behaviour, while a non-zero value is required to wait
+    # on a tcp:// peer. Passing it explicitly here must not change file reads.
+    streamer = FCStreamer()
+    res = streamer.open_stream(
+        lgnd_test_data.get_path("fcio/L200-comm-20211130-phy-spms.fcio"),
+        buffer_size=6,
+        timeout=0,
+    )
+    assert isinstance(res[0], RawBuffer)
+    assert streamer.read_packet() is True
+
+
 def test_read_packet(lgnd_test_data):
     streamer = FCStreamer()
     streamer.open_stream(
